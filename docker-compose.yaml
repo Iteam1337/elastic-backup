@@ -1,0 +1,9 @@
+test:
+  build: .
+  environment:
+    ELASTIC__HOST: es:9200
+  extra_hosts:
+    - "es:${LOCAL_IP}"
+  volumes:
+    - '/tmp/backup:/data/backup'
+    - '/tmp/es-backup:/data/es-backup'
