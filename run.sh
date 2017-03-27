@@ -1,8 +1,8 @@
 #!/bin/bash
 
 ELASTIC__HOST=$(           [[ ! -z $ELASTIC__HOST ]]            && echo "$ELASTIC__HOST"            || echo "localhost:9200")
-ELASTIC__BACKUP_DIR=$(     [[ ! -z $ELASTIC__BACKUP_DIR ]]      && echo "$ELASTIC__BACKUP_DIR"      || echo "/data/es-backup")
-ELASTIC__SNAPSHOT_NAME=$(  [[ ! -z $ELASTIC__SNAPSHOT_NAME ]]   && echo "$ELASTIC__SNAPSHOT_NAME"   || echo "data")
+ELASTIC__BACKUP_DIR=$(     [[ ! -z $ELASTIC__BACKUP_DIR ]]      && echo "$ELASTIC__BACKUP_DIR"      || echo "/mnt/elastic_dump")
+ELASTIC__SNAPSHOT_NAME=$(  [[ ! -z $ELASTIC__SNAPSHOT_NAME ]]   && echo "$ELASTIC__SNAPSHOT_NAME"   || echo "elastic_dump")
 ELASTIC__BACKUP_COMPRESS=$([[ ! -z $ELASTIC__BACKUP_COMPRESS ]] && echo "$ELASTIC__BACKUP_COMPRESS" || echo "true")
 
 ELASTIC__PATH="$ELASTIC__HOST/_snapshot/$ELASTIC__SNAPSHOT_NAME"
@@ -11,7 +11,7 @@ CRON_TIME=$([[ ! -z $CRON_TIME ]] && echo "$CRON_TIME" || echo "0 4 */2 * *")
 
 PATH__APP=$(       [[ ! -z $PATH__APP ]]        && echo "$PATH__APP"        || echo "/app")
 PATH__LOGS=$(      [[ ! -z $PATH__LOGS ]]       && echo "$PATH__LOGS"       || echo "/var/log")
-PATH__BACKUP_DIR=$([[ ! -z $PATH__BACKUP_DIR ]] && echo "$PATH__BACKUP_DIR" || echo "/data/backup")
+PATH__BACKUP_DIR=$([[ ! -z $PATH__BACKUP_DIR ]] && echo "$PATH__BACKUP_DIR" || echo "/backup")
 
 _main() {
   if [[ ! -z $(ps aux|grep [c]ron) ]]; then
@@ -173,6 +173,13 @@ EOF
     estd "PATH__BACKUP_DIR: $PATH__BACKUP_DIR does not exist, creating"
     mkdir -p "$PATH__BACKUP_DIR"
   fi
+
+  n=0
+  until [ $n -ge 5 ]; do
+    curl --silent -XGET "$ELASTIC__HOST" > /dev/null && break
+    n=$[$n+1]
+    sleep 4
+  done
 
   ACTION=$(curl --silent -XPUT "$ELASTIC__PATH" -d "{
     \"type\": \"fs\",
