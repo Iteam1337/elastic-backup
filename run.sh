@@ -92,10 +92,11 @@ set -e
 source /opt/bin/helper.sh
 
 _main() {
-  estd "removing ind* and (snap|meta)-*.dat from $ELASTIC__BACKUP_DIR"
+  estd "removing indices, inde* and (snap|meta)-*.dat from $ELASTIC__BACKUP_DIR"
 
+  rm -r ${ELASTIC__BACKUP_DIR}/indices
   find $ELASTIC__BACKUP_DIR -name "ind*" -exec rm -r {} \;
-  find $ELASTIC__BACKUP_DIR \( -name "meta-*.dat" -o -name "snap-*.dat" \) -delete
+  find $ELASTIC__BACKUP_DIR \( -name "meta-*.dat" -o -name "snap-*.dat" -o -name "inde*" \) -delete
 }
 
 _main
