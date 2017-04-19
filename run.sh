@@ -94,7 +94,7 @@ source /opt/bin/helper.sh
 _main() {
   estd "removing ind* and (snap|meta)-*.dat from $ELASTIC__BACKUP_DIR"
 
-  find $ELASTIC__BACKUP_DIR -name ind* -exec rm -r {} \;
+  find $ELASTIC__BACKUP_DIR -name "ind*" -exec rm -r {} \;
   find $ELASTIC__BACKUP_DIR \( -name "meta-*.dat" -o -name "snap-*.dat" \) -delete
 }
 
