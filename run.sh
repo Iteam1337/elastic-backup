@@ -91,18 +91,11 @@ set -e
 
 source /opt/bin/helper.sh
 
-dump_date="\$1"
-
 _main() {
-  if [ -z "\$dump_date" ]; then
-    eerr "dump_date not set"
-    return 1
-  fi
+  estd "removing ind* and (snap|meta)-*.dat from $ELASTIC__BACKUP_DIR"
 
-  estd "removing index, indices and *\${dump_date}* from $ELASTIC__BACKUP_DIR"
-
-  rm -r $ELASTIC__BACKUP_DIR/indices $ELASTIC__BACKUP_DIR/index
-  find $ELASTIC__BACKUP_DIR -name "*\${dump_date}*" -delete
+  find $ELASTIC__BACKUP_DIR -name ind* -exec rm -r {} \;
+  find $ELASTIC__BACKUP_DIR \( -name "meta-*.dat" -o -name "snap-*.dat" \) -delete
 }
 
 _main
@@ -137,7 +130,7 @@ _main() {
 
   cd $ELASTIC__BACKUP_DIR
 
-  tar -zcf "\$dump_file" index indices/ meta-\$dump_date.dat snap-\$dump_date.dat
+  tar -zcf "\$dump_file" ind* meta-*.dat snap-*.dat
 
   estd "backup \"\$dump_file\" moved from \"$ELASTIC__BACKUP_DIR\""
 
@@ -146,7 +139,7 @@ _main() {
     return 1
   }
 
-  /opt/bin/clear.sh \$dump_date > /dev/null || {
+  /opt/bin/clear.sh > /dev/null || {
     eerr "clear failed for \$dump_date"
     return 1
   }
@@ -215,7 +208,7 @@ _main() {
       }
     done
 
-    /opt/bin/clear.sh \$backup_name > /dev/null || {
+    /opt/bin/clear.sh > /dev/null || {
       eerr "clear failed for \$backup_name"
       return 1
     }
