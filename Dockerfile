@@ -5,6 +5,8 @@ RUN apk add --no-cache "curl<7.53" "bash<4.4" "file<6" "tzdata"
 
 ARG LOCATION
 
+ENV LOCATION ${LOCATION:-"Europe/Stockholm"}
+
 ENV ELASTIC__HOST localhost:9200
 ENV ELASTIC__BACKUP_DIR /mnt/elastic_backup
 ENV ELASTIC__BACKUP_COMPRESS true
