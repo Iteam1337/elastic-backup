@@ -171,7 +171,7 @@ _main() {
 
   tar -xzf \$backup_file && rm \$backup_file
 
-  backup_name=\$(echo "\$backup_file"|sed 's/${ELASTIC__SNAPSHOT_NAME}_//'|sed 's/\.tar\.gz//i')
+  backup_name=\$(echo "\$backup_file"|sed 's/${ELASTIC__SNAPSHOT_NAME}_//'|sed 's/\.tar\.gz//i'|cut -d. -f2)
 
   elastic_url="${ELASTIC__PATH}/\${backup_name}/_restore?wait_for_completion=true&pretty"
 
