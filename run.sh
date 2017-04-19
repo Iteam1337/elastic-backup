@@ -91,7 +91,7 @@ set -e
 
 source /opt/bin/helper.sh
 
-dump_date="$1"
+dump_date="\$1"
 
 _main() {
   if [ -z "\$dump_date" ]; then
@@ -146,7 +146,7 @@ _main() {
     return 1
   }
 
-  /opt/bin/clear.sh \$(echo \$dump_date) > /dev/null || {
+  /opt/bin/clear.sh \$dump_date > /dev/null || {
     eerr "clear failed for \$dump_date"
     return 1
   }
@@ -215,7 +215,7 @@ _main() {
       }
     done
 
-    /opt/bin/clear.sh \$(echo \$backup_name) > /dev/null || {
+    /opt/bin/clear.sh \$backup_name > /dev/null || {
       eerr "clear failed for \$backup_name"
       return 1
     }
