@@ -199,15 +199,11 @@ _main() {
   estd "backup_name: \$backup_name"
   estd "elastic_url: \$elastic_url"
 
-  indices=\$(cd ${ELASTIC__BACKUP_DIR}/indices && find . -maxdepth 1 -mindepth 1|sed 's/\.\///')
-
   rollback () {
-    for index in \$indices; do
-      curl --silent -XPOST ${ELASTIC__HOST}/\${index}/_open?wait_for_completion=true > /dev/null || {
-        eerr "opening of \$index failed"
-        return 1
-      }
-    done
+    curl --silent -XPOST ${ELASTIC__HOST}/_all/_open?wait_for_completion=true > /dev/null || {
+      eerr "opening of indices failed"
+      return 1
+    }
 
     /opt/bin/clear.sh > /dev/null || {
       eerr "clear failed for \$backup_name"
@@ -220,12 +216,10 @@ _main() {
   }
 
   trap rollback INT TERM EXIT
-    for index in \$indices; do
-      curl --silent -XPOST ${ELASTIC__HOST}/\${index}/_close?wait_for_completion=true > /dev/null || {
-        eerr "closing of \$index failed"
-        return 1
-      }
-    done
+    curl --silent -XPOST ${ELASTIC__HOST}/_all/_close?wait_for_completion=true > /dev/null || {
+      eerr "closing of indices failed"
+      return 1
+    }
 
     curl --silent -XPOST "\$elastic_url" > /dev/null || {
       eerr "restore action failed"
