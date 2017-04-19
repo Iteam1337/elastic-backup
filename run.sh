@@ -200,7 +200,7 @@ _main() {
   estd "elastic_url: \$elastic_url"
 
   rollback () {
-    curl --silent -XPOST ${ELASTIC__HOST}/_all/_open?wait_for_completion=true > /dev/null || {
+    curl --silent -XPOST ${ELASTIC__HOST}/_all/_open > /dev/null || {
       eerr "opening of indices failed"
       return 1
     }
@@ -216,7 +216,7 @@ _main() {
   }
 
   trap rollback INT TERM EXIT
-    curl --silent -XPOST ${ELASTIC__HOST}/_all/_close?wait_for_completion=true > /dev/null || {
+    curl --silent -XPOST ${ELASTIC__HOST}/_all/_close > /dev/null || {
       eerr "closing of indices failed"
       return 1
     }
