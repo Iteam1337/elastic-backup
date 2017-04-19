@@ -83,6 +83,32 @@ EOF
     mkdir -p "$DUMP__LOCATION"
   fi
 
+  estd "generate clear script"
+  cat <<EOF > /opt/bin/clear.sh
+#!/bin/bash
+
+set -e
+
+source /opt/bin/helper.sh
+
+dump_date="$1"
+
+_main() {
+  if [ -z "\$dump_date" ]; then
+    eerr "dump_date not set"
+    return 1
+  fi
+
+  estd "removing index, indices and *\${dump_date}* from $ELASTIC__BACKUP_DIR"
+
+  rm -r $ELASTIC__BACKUP_DIR/indices $ELASTIC__BACKUP_DIR/index
+  find $ELASTIC__BACKUP_DIR -name "*\${dump_date}*" -delete
+}
+
+_main
+EOF
+  chmod u+x /opt/bin/clear.sh
+
   estd "generate backup script"
   cat <<EOF > /opt/bin/backup.sh
 #!/bin/bash
@@ -115,15 +141,15 @@ _main() {
 
   estd "backup \"\$dump_file\" moved from \"$ELASTIC__BACKUP_DIR\""
 
-  ACTION=\$(curl --silent -XDELETE "\$elastic_url") || {
+  curl --silent -XDELETE "\$elastic_url" > /dev/null || {
     eerr "delete action failed"
     return 1
   }
 
-  estd "removing index, indices and *\${dump_date}* from $ELASTIC__BACKUP_DIR"
-
-  rm -r $ELASTIC__BACKUP_DIR/indices $ELASTIC__BACKUP_DIR/index
-  find $ELASTIC__BACKUP_DIR -name "*\${dump_date}*" -delete
+  /opt/bin/clear.sh \$dump_date > /dev/null || {
+    eerr "clear failed for \$dump_date"
+    return 1
+  }
 
   return 0
 }
@@ -188,6 +214,11 @@ _main() {
         return 1
       }
     done
+
+    /opt/bin/clear.sh \$backup_name > /dev/null || {
+      eerr "clear failed for \$backup_name"
+      return 1
+    }
 
     einf "rollback done"
 
