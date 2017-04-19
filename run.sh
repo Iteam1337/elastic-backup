@@ -1,61 +1,102 @@
 #!/bin/bash
 
-ELASTIC__HOST=$(           [[ ! -z $ELASTIC__HOST ]]            && echo "$ELASTIC__HOST"            || echo "localhost:9200")
-ELASTIC__BACKUP_DIR=$(     [[ ! -z $ELASTIC__BACKUP_DIR ]]      && echo "$ELASTIC__BACKUP_DIR"      || echo "/mnt/elastic_dump")
-ELASTIC__SNAPSHOT_NAME=$(  [[ ! -z $ELASTIC__SNAPSHOT_NAME ]]   && echo "$ELASTIC__SNAPSHOT_NAME"   || echo "elastic_dump")
-ELASTIC__BACKUP_COMPRESS=$([[ ! -z $ELASTIC__BACKUP_COMPRESS ]] && echo "$ELASTIC__BACKUP_COMPRESS" || echo "true")
+set -e
+
+ELASTIC__HOST=${ELASTIC__HOST:-"localhost:9200"}
+ELASTIC__BACKUP_DIR=${ELASTIC__BACKUP_DIR:-"/mnt/elastic_dump"}
+ELASTIC__SNAPSHOT_NAME=${ELASTIC__SNAPSHOT_NAME:-"elastic_dump"}
+ELASTIC__BACKUP_COMPRESS=${ELASTIC__BACKUP_COMPRESS:-"true"}
 
 ELASTIC__PATH="$ELASTIC__HOST/_snapshot/$ELASTIC__SNAPSHOT_NAME"
 
-CRON_TIME=$([[ ! -z $CRON_TIME ]] && echo "$CRON_TIME" || echo "0 4 */2 * *")
+DUMP__NAME=${DUMP__NAME:-"dump"}
+DUMP__LOCATION=${DUMP__LOCATION:-"/opt/backup"}
 
-PATH__APP=$(       [[ ! -z $PATH__APP ]]        && echo "$PATH__APP"        || echo "/app")
-PATH__LOGS=$(      [[ ! -z $PATH__LOGS ]]       && echo "$PATH__LOGS"       || echo "/var/log")
-PATH__BACKUP_DIR=$([[ ! -z $PATH__BACKUP_DIR ]] && echo "$PATH__BACKUP_DIR" || echo "/backup")
+RUN_ON_STARTUP=${RUN_ON_STARTUP:-"false"}
+
+CRON_TIME=${CRON_TIME:-"0 4 */2 * *"}
 
 _main() {
   if [[ ! -z $(ps aux|grep [c]ron) ]]; then
     echo "service already started"
-    tail -f $PATH__LOGS/backup.log
+    tail -f /var/log/backup.log
     return 0
   fi
 
-  cat <<EOF > "$PATH__APP/std_out"
+  mkdir -p /opt/bin
+
+  cat <<EOF > /opt/bin/helper.sh
 #!/bin/bash
+
+set -e
 
 function pdate {
   echo \$(date +%Y-%m-%dT%H:%M:%S)
   return 0
 }
 function einf {
-  echo "  > \$1 @ \$(pdate)"
+  echo " > \$1 @ \$(pdate)"
   return 0
 }
 function eerr {
   echo "!!> \$1 @ \$(pdate)" 1>&2
-  return 0
+  return 1
 }
 function estd {
   echo "  > \$1"
   return 0
 }
 EOF
-  chmod u+x "$PATH__APP/std_out"
-  source "$PATH__APP/std_out"
+
+  chmod +x /opt/bin/helper.sh
+  source /opt/bin/helper.sh
+
+  _check_status() {
+    local n=0
+    local retries=5
+    local status=1
+
+    until [[ $n -ge $retries ]]; do
+      if curl --silent -XGET "$ELASTIC__HOST" > /dev/null ; then
+        status=0
+        break
+      fi
+      ((n++))
+      estd "retry count: $n for host $ELASTIC__HOST"
+      sleep 3
+    done
+
+    return $status
+  }
+
+  if ! _check_status ; then
+    eerr "host unreachable"
+  fi
+
+  if [ ! -d "$ELASTIC__BACKUP_DIR" ]; then
+    eerr "ELASTIC__BACKUP_DIR: $ELASTIC__BACKUP_DIR does not exist"
+    return 1
+  fi
+
+  if [ ! -d "$DUMP__LOCATION" ]; then
+    estd "DUMP__LOCATION: $DUMP__LOCATION does not exist, creating"
+    mkdir -p "$DUMP__LOCATION"
+  fi
 
   estd "generate backup script"
-  cat <<EOF > $PATH__APP/backup.sh
+  cat <<EOF > /opt/bin/backup.sh
 #!/bin/bash
 
-source "$PATH__APP/std_out"
+set -e
 
-BACKUP_NAME=\$(date +%Y-%m-%d-%H-%M)
-D="$ELASTIC__BACKUP_DIR"
-BACKUP_FILE="$PATH__BACKUP_DIR/${ELASTIC__SNAPSHOT_NAME}_\$BACKUP_NAME.tar.gz"
-ELASTIC__URL="$ELASTIC__PATH/\$BACKUP_NAME?wait_for_completion=true&pretty"
+source /opt/bin/helper.sh
+
+dump_date=\$(date +%Y%m%d%H%M)
+dump_file=$DUMP__LOCATION/$DUMP__NAME.\$dump_date.tar.gz
+elastic_url="$ELASTIC__PATH/\$dump_date?wait_for_completion=true&pretty"
 
 _main() {
-  ACTION=\$(curl --silent -XPUT "\$ELASTIC__URL") || {
+  ACTION=\$(curl --silent -XPUT "\$elastic_url") || {
     eerr "create action failed"
     return 1
   }
@@ -70,41 +111,53 @@ _main() {
 
   cd $ELASTIC__BACKUP_DIR
 
-  tar -zcf "\$BACKUP_FILE" index indices/ meta-\$BACKUP_NAME.dat snap-\$BACKUP_NAME.dat
+  tar -zcf "\$dump_file" index indices/ meta-\$dump_date.dat snap-\$dump_date.dat
 
-  estd "backup \"\$BACKUP_FILE\" moved from \"$ELASTIC__BACKUP_DIR\""
+  estd "backup \"\$dump_file\" moved from \"$ELASTIC__BACKUP_DIR\""
 
-  ACTION=\$(curl --silent -XDELETE "\$ELASTIC__URL") || {
+  ACTION=\$(curl --silent -XDELETE "\$elastic_url") || {
     eerr "delete action failed"
     return 1
   }
 
-  estd "removing $ELASTIC__BACKUP_DIR/index and $ELASTIC__BACKUP_DIR/indices"
-  rm -r $ELASTIC__BACKUP_DIR/index $ELASTIC__BACKUP_DIR/indices
+  estd "removing index, indices and *\${dump_date}* from $ELASTIC__BACKUP_DIR"
+
+  rm -r $ELASTIC__BACKUP_DIR/indices $ELASTIC__BACKUP_DIR/index
+  find $ELASTIC__BACKUP_DIR -name "*\${dump_date}*" -delete
 
   return 0
 }
 
 _main
 EOF
-  chmod u+x backup.sh
+  chmod u+x /opt/bin/backup.sh
 
   estd "generate restore script"
-  cat <<EOF > $PATH__APP/restore.sh
+  cat <<EOF > /opt/bin/restore.sh
 #!/bin/bash
 
-source "$PATH__APP/std_out"
+set -e
 
-RESTORE_PATH=\$([[ ! -z \$1 ]] && echo "\$1" || echo $PATH__BACKUP_DIR/\$(ls $PATH__BACKUP_DIR/|sort|tail -n 1))
+source /opt/bin/helper.sh
+
+restore_path=""
+
+while getopts ":p:" opt; do
+  case "\$opt" in
+    p) restore_path="\$OPTARG" ;;
+  esac
+done; shift \$((OPTIND-1)); [ "\$1" = "--" ] && shift
 
 _main() {
-  if [ ! -f "\$RESTORE_PATH" ]; then
-    eerr "path not set (first argument)"
+  if [ -z "\$restore_path" ]; then
+    eerr "path not set, use --p"
     return 1
   fi
 
-  file_type=\$(file --mime-type -b "\$RESTORE_PATH")
-  backup_file=\$(basename \$RESTORE_PATH)
+  einf "restore from \$restore_path"
+
+  file_type=\$(file --mime-type -b "\$restore_path")
+  backup_file=\$(basename \$restore_path)
 
   if [[ \$file_type != application/x-gzip ]]; then
     eerr "path not gzip (currently unsupported)"
@@ -113,7 +166,7 @@ _main() {
 
   einf "restoring using \"\$backup_file\""s
 
-  cp \$RESTORE_PATH $ELASTIC__BACKUP_DIR
+  cp \$restore_path $ELASTIC__BACKUP_DIR
   cd $ELASTIC__BACKUP_DIR
 
   tar -xzf \$backup_file && rm \$backup_file
@@ -162,53 +215,36 @@ _main() {
 
 _main
 EOF
-  chmod u+x $PATH__APP/restore.sh
 
-  if [ ! -d "$ELASTIC__BACKUP_DIR" ]; then
-    eerr "ELASTIC__BACKUP_DIR: $ELASTIC__BACKUP_DIR does not exist"
-    return 1
-  fi
-
-  if [ ! -d "$PATH__BACKUP_DIR" ]; then
-    estd "PATH__BACKUP_DIR: $PATH__BACKUP_DIR does not exist, creating"
-    mkdir -p "$PATH__BACKUP_DIR"
-  fi
-
-  n=0
-  until [ $n -ge 5 ]; do
-    curl --silent -XGET "$ELASTIC__HOST" > /dev/null && break
-    n=$[$n+1]
-    sleep 4
-  done
+  chmod u+x /opt/bin/restore.sh
 
   ACTION=$(curl --silent -XPUT "$ELASTIC__PATH" -d "{
     \"type\": \"fs\",
     \"compress\": $ELASTIC__BACKUP_COMPRESS,
     \"settings\": {
-      \"location\": \"$ELASTIC__BACKUP_DIR\",
+      \"location\": \"$ELASTIC__BACKUP_DIR\"
     }
   }") || {
     eerr "$ELASTIC__HOST not reachable"
     return 1
   }
 
-  if [[ ! -z $(echo $ACTION|grep "\"status\":5") ]]; then
+  if [[ ! -z $(echo $ACTION|grep "\"status\":5") ]] || [[ ! -z $(echo $ACTION|grep "\"status\":4") ]] ; then
+    echo "$ACTION" 
     eerr "Backup not ready"
-    echo $ACTION
     return 1
   fi
 
-  sh $PATH__APP/backup.sh || {
-    return 1
-  }
-
   estd "starting logger"
-  touch $PATH__LOGS/backup.log
-  tail -f $PATH__LOGS/backup.log &
+  touch /var/log/backup.log
+  tail -f /var/log/backup.log &
 
-  echo "$CRON_TIME $PATH__APP/backup.sh >> $PATH__LOGS/backup.log 2>&1" > crontab.conf
+  if [ "$RUN_ON_STARTUP" == "true" ]; then
+    /opt/bin/backup.sh
+  fi
 
-  crontab crontab.conf
+  echo -e "$CRON_TIME /opt/bin/backup.sh >> /var/log/backup.log 2>&1" | crontab -
+
   estd "running elastic backups at $CRON_TIME"
 
   exec crond -f
