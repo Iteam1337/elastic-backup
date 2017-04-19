@@ -3,6 +3,8 @@ FROM alpine:3.5
 # https://pkgs.alpinelinux.org/packages
 RUN apk add --no-cache "curl<7.53" "bash<4.4" "file<6" "tzdata"
 
+ARG LOCATION
+
 ENV ELASTIC__HOST localhost:9200
 ENV ELASTIC__BACKUP_DIR /mnt/elastic_backup
 ENV ELASTIC__BACKUP_COMPRESS true
@@ -16,9 +18,6 @@ ENV RUN_ON_STARTUP false
 
 # https://en.wikipedia.org/wiki/Cron#Overview
 ENV CRON_TIME "0 4 */2 * *"
-
-ENV LOCATION "Europe/Stockholm"
-
 
 RUN echo "$LOCATION" > /etc/timezone && \
   cp /usr/share/zoneinfo/$LOCATION /etc/localtime
